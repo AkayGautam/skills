@@ -1,22 +1,47 @@
+// routes/video.js
 import express from 'express';
 import pool from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import url from 'url';
 
 const router = express.Router();
 
+// base URL for building absolute file URLs (falls back to localhost)
+const APP_URL = process.env.APP_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+/**
+ * Helper: convert stored video_url (e.g. "videos/demo.mp4") to absolute URL:
+ * APP_URL + "/uploads/" + path (ensures no duplicate slashes)
+ */
+function toAbsoluteVideoUrl(videoUrl) {
+  if (!videoUrl) return null;
+  // if videoUrl is already absolute, return as-is
+  if (/^https?:\/\//i.test(videoUrl)) return videoUrl;
+  // Trim leading slashes then prefix with /uploads/
+  const cleaned = String(videoUrl).replace(/^\/+/, '');
+  return `${APP_URL.replace(/\/$/, '')}/uploads/${cleaned}`;
+}
+
+/* single video by id */
 router.get('/videos/:videoId', async (req, res) => {
   try {
     const videoId = Number(req.params.videoId);
     if (!videoId) return res.status(400).json({ error: 'Invalid videoId' });
     const [rows] = await pool.query(`SELECT * FROM lesson_videos WHERE id = ? LIMIT 1`, [videoId]);
     if (!rows.length) return res.status(404).json({ error: 'Video not found' });
-    res.json({ video: rows[0] });
+
+    const video = rows[0];
+    // convert video_url to absolute if required
+    if (video.video_url) video.video_url = toAbsoluteVideoUrl(video.video_url);
+
+    res.json({ video });
   } catch (err) {
     console.error('GET /api/lessons/videos/:videoId error', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
+/* videos by lesson */
 router.get('/:lessonId/videos', async (req, res) => {
   try {
     const lessonId = Number(req.params.lessonId);
@@ -25,13 +50,22 @@ router.get('/:lessonId/videos', async (req, res) => {
       `SELECT * FROM lesson_videos WHERE lesson_id = ? ORDER BY position ASC, id ASC`,
       [lessonId]
     );
-    res.json({ videos: rows });
+
+    // map each video row to include absolute video_url
+    const videos = (rows || []).map((v) => {
+      const copy = { ...v };
+      if (copy.video_url) copy.video_url = toAbsoluteVideoUrl(copy.video_url);
+      return copy;
+    });
+
+    res.json({ videos });
   } catch (err) {
     console.error('GET /api/lessons/:lessonId/videos error', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
+/* other lesson routes (unchanged) */
 router.get('/', async (req, res) => {
   try {
     const [rows] = await pool.query(
@@ -130,7 +164,10 @@ router.post('/:lessonId/videos', requireAuth, async (req, res) => {
       [lessonId, lesson.course_id, title, filename, video_url, duration_seconds, is_preview, video_price, position]
     );
     const [rows] = await pool.query('SELECT * FROM lesson_videos WHERE id = ?', [result.insertId]);
-    res.status(201).json({ video: rows[0] });
+    // convert stored video_url to absolute for returned object
+    const video = rows[0];
+    if (video && video.video_url) video.video_url = toAbsoluteVideoUrl(video.video_url);
+    res.status(201).json({ video });
   } catch (err) {
     console.error('POST /api/lessons/:id/videos error', err);
     res.status(500).json({ error: 'Server error' });
@@ -153,7 +190,9 @@ router.put('/videos/:videoId', requireAuth, async (req, res) => {
     values.push(videoId);
     await pool.query(`UPDATE lesson_videos SET ${fields.join(', ')} WHERE id = ?`, values);
     const [rows] = await pool.query('SELECT * FROM lesson_videos WHERE id = ?', [videoId]);
-    res.json({ video: rows[0] });
+    const video = rows[0];
+    if (video && video.video_url) video.video_url = toAbsoluteVideoUrl(video.video_url);
+    res.json({ video });
   } catch (err) {
     console.error('PUT /api/videos/:id error', err);
     res.status(500).json({ error: 'Server error' });

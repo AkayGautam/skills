@@ -19,8 +19,16 @@ import uploadRouter from './routes/upload.js';
 import videosRouter from './routes/videos.js';
 import userPurchasesRouter from './routes/userPurchases.js';
 import videoRoutes from './routes/videoRoutes.js';
+import debugPurchasesRouter from './routes/debugPurchases.js';
+import { fileURLToPath } from 'url';
+import recentVideosRoutes from "./routes/recentVideos.js";
+import progressRoutes from "./routes/progress.js";
+
 
 const app = express();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -51,6 +59,12 @@ app.use(curriculumSectionsRouter);
 app.use('/api/lessons', lessonsRouter);
 app.use('/api/videos', videosRouter);
 app.use('/api', videoRoutes);
+app.use('/api/debug', debugPurchasesRouter);
+app.use("/api/users", recentVideosRoutes);
+app.use("/api/progress", progressRoutes);
+
+// app.use('/uploads', express.static(path.join(__dirname, 'public', 'upload')));
+
 
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
